@@ -60,12 +60,18 @@ public class Hello {
 
             if (word.toString().equals("*")) {                                          // Το "*" έρχεται πρώτο λόγω ταξινόμησης
                 totals = counts;                                                        // Αποθηκεύει τα σύνολα, π.χ. {farm=4, zoo=6}
-                                                             // Δεν γράφει γραμμή για το "*"
+                return;                                                                 // Δεν γράφει γραμμή για το "*"
             }
 
             for (Map.Entry<String, Integer> e : counts.entrySet()) {                    // Γράφει μία γραμμή για κάθε αρχείο
                 double ratio = (double) e.getValue() / totals.get(e.getKey());          // Πλήθος λέξης / σύνολο λέξεων του αρχείου
                 context.write(word, new Text(e.getKey() + "\t" + e.getValue() + "\t" + ratio));
+            }
+
+            if (counts.containsKey("farm") && counts.containsKey("zoo")) {              // Μόνο αν η λέξη υπάρχει και στα δύο αρχεία
+                double rFarm = (double) counts.get("farm") / totals.get("farm");        // Συχνότητα στο farm, π.χ. 1 / 4
+                double rZoo  = (double) counts.get("zoo")  / totals.get("zoo");         // Συχνότητα στο zoo, π.χ. 2 / 6
+                context.write(word, new Text("r=" + (rFarm / rZoo)));                   // Λόγος των δύο συχνοτήτων
             }
         }
     }
