@@ -12,8 +12,8 @@ import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 import java.io.IOException;
-import java.util.Map;                                                                   // ΑΛΛΑΓΗ
-import java.util.TreeMap;                                                               // ΑΛΛΑΓΗ
+import java.util.Map;
+import java.util.TreeMap;
 
 public class Hello {
 
@@ -34,6 +34,7 @@ public class Hello {
                 throws IOException, InterruptedException {
             for (String w : line.toString().split(" ")) {
                 context.write(new Text(w), outValue);                                   // Γράφει (λέξη, "zoo:1")
+                context.write(new Text("*"), outValue);                                 // Γράφει ("*", "zoo:1") για το σύνολο λέξεων του αρχείου
             }
         }
     }
@@ -44,16 +45,16 @@ public class Hello {
         protected void reduce(Text word, Iterable<Text> values, Context context)
                 throws IOException, InterruptedException {
 
-            Map<String, Integer> counts = new TreeMap<>();                              // ΑΛΛΑΓΗ: Κρατάει άθροισμα ανά αρχείο, ταξινομημένο
+            Map<String, Integer> counts = new TreeMap<>();                              // Κρατάει άθροισμα ανά αρχείο, ταξινομημένο
 
             for (Text v : values) {
-                String[] parts = v.toString().split(":");                               // ΑΛΛΑΓΗ: "zoo:1" → ["zoo", "1"]
-                String file = parts[0];                                                 // ΑΛΛΑΓΗ: "zoo"
-                int n = Integer.parseInt(parts[1]);                                     // ΑΛΛΑΓΗ: 1
-                counts.merge(file, n, Integer::sum);                                    // ΑΛΛΑΓΗ: Προσθέτει στο άθροισμα του αρχείου
+                String[] parts = v.toString().split(":");                               // "zoo:1" → ["zoo", "1"]
+                String file = parts[0];                                                 // "zoo"
+                int n = Integer.parseInt(parts[1]);                                     // 1
+                counts.merge(file, n, Integer::sum);                                    // Προσθέτει στο άθροισμα του αρχείου
             }
 
-            for (Map.Entry<String, Integer> e : counts.entrySet()) {                    // ΑΛΛΑΓΗ: Γράφει μία γραμμή για κάθε αρχείο
+            for (Map.Entry<String, Integer> e : counts.entrySet()) {                    // Γράφει μία γραμμή για κάθε αρχείο
                 context.write(word, new Text(e.getKey() + "\t" + e.getValue()));
             }
         }
