@@ -39,8 +39,12 @@ public class Hello {
         }
     }
 
-    // REDUCE: παίρνει (λέξη, ["zoo:1","zoo:1","farm:1"]) και γράφει μία γραμμή ανά αρχείο
+    // REDUCE: για το "*" κρατάει τα σύνολα ανά αρχείο, για κάθε λέξη γράφει πλήθος / σύνολο αρχείου
+    // Προϋπόθεση: 1 reducer, ώστε το "*" (που ταξινομείται πρώτο) να φτάνει πριν από τις λέξεις
     public static class HelloReducer extends Reducer<Text, Text, Text, Text> {
+
+        private Map<String, Integer> totals = new TreeMap<>();                         // Κρατάει τα σύνολα λέξεων ανά αρχείο (από το "*")
+
         @Override
         protected void reduce(Text word, Iterable<Text> values, Context context)
                 throws IOException, InterruptedException {
@@ -54,8 +58,14 @@ public class Hello {
                 counts.merge(file, n, Integer::sum);                                    // Προσθέτει στο άθροισμα του αρχείου
             }
 
+            if (word.toString().equals("*")) {                                          // Το "*" έρχεται πρώτο λόγω ταξινόμησης
+                totals = counts;                                                        // Αποθηκεύει τα σύνολα, π.χ. {farm=4, zoo=6}
+                                                             // Δεν γράφει γραμμή για το "*"
+            }
+
             for (Map.Entry<String, Integer> e : counts.entrySet()) {                    // Γράφει μία γραμμή για κάθε αρχείο
-                context.write(word, new Text(e.getKey() + "\t" + e.getValue()));
+                double ratio = (double) e.getValue() / totals.get(e.getKey());          // Πλήθος λέξης / σύνολο λέξεων του αρχείου
+                context.write(word, new Text(e.getKey() + "\t" + e.getValue() + "\t" + ratio));
             }
         }
     }
@@ -66,6 +76,7 @@ public class Hello {
         job.setJarByClass(Hello.class);
         job.setMapperClass(HelloMapper.class);
         job.setReducerClass(HelloReducer.class);
+        job.setNumReduceTasks(1);                                                       // Ένας reducer: απαιτείται για να βλέπει το "*" πριν από τις λέξεις
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
         FileInputFormat.addInputPath(job, new Path(args[0]));
