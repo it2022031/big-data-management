@@ -125,6 +125,7 @@ public class Q1 {
             //αρχεια στα οποια η λεξη δεν εμφανιστηκε, παραλειπονται αυτοματα
             Map<String, Integer> counts = new HashMap<>();
 
+            //ιδιο parsing με τον combiner
             for (Text val : values) {
                 String s = val.toString();
                 int sep = s.lastIndexOf(':');
@@ -133,17 +134,20 @@ public class Q1 {
                 counts.put(doc, counts.getOrDefault(doc, 0) + count);
             }
 
-            //φθινουσα σειρα συχνοτητας
+            //παιρνουμε ολα τα ονοματα αρχειων (keys του map) σε εναν πινακα για να ταξινομηθουν
             String[] docs = counts.keySet().toArray(new String[0]);
             Arrays.sort(docs, (a, b) -> {
+                //πρωτο κριτηριο ειναι η φθινουσα συχνοτητα
                 int freqCmp = Integer.compare(counts.get(b), counts.get(a));
                 if (freqCmp != 0) {
                     return freqCmp;
                 }
+                //δευτερο (στην περιπτωση ισοβαθμιας) κριτηριο ειναι η αλφαβητικη σειρα ως προς το ονομα του αρχειου
                 return a.compareTo(b);
             });
 
-            StringBuilder sb = new StringBuilder();
+            //συνθετουμε το τελικο string εξοδου σε μορφη "doc1:count1, doc2:count2,..." με βαση την ταξινομημενη σειρα
+            StringBuilder sb = new StringBuilder(); //το string builder ειναι πιο αποδοτικο απο '+' μεσα σε loop
             for (int i = 0; i < docs.length; i++) {
                 if (i > 0) {
                     sb.append(", ");
@@ -152,39 +156,52 @@ public class Q1 {
                 sb.append(doc).append(":").append(counts.get(doc));
             }
 
+            //θετουμε το τελικο string στο outVal και το γραφουμε στο HDFS
             outVal.set(sb.toString());
             context.write(key, outVal);
         }
     }
 
+    //σημειο εκκινησης που ρυθμιζει, υποβαλει και παρακολουθει το MapReduce job στο hadoop cluster
     public static void main(String[] args) throws Exception {
+        //ελεγχος αν δοθηκαν 2 υποχρεωτικα arguments (input, output) και προαιρετικα τριτο (no-combiner)
         if (args.length < 2 || args.length > 3) {
             System.err.println("Usage: Q1 <input path> <output path> [no-combiner]");
-            System.exit(1);
+            System.exit(1); //σφαλμα
         }
 
+        //ο combiner ενεργοποιειται by default, εκτος αν δοθηκε ως 3o arg "no-combiner"
         boolean useCombiner = !(args.length == 3 && args[2].equalsIgnoreCase("no-combiner"));
 
+        //φορτωνει αυτοματα τις ρυθμισεις του hadoop cluster
         Configuration conf = new Configuration();
+
+        //δημιουργει ενα νεο αντικειμενο job για την παρακολουθηση της εκτελεσης
         Job job = Job.getInstance(conf, useCombiner ? "Q1 Inverted Index (with Combiner)" : "Q1 Inverted Index (no Combiner)");
         job.setJarByClass(Q1.class);
 
+        //οριζουμε τις κλασεις mapper,combiner και reducer
         job.setMapperClass(InvertedIndexMapper.class);
         if (useCombiner) {
             job.setCombinerClass(InvertedIndexCombiner.class);
         }
         job.setReducerClass(InvertedIndexReducer.class);
 
+        //οριζουμε τους τυπους key και value της εξοδου
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(Text.class);
 
+        //οριζουμε τους φακελους εισοδου-εξοδου στο HDFS (ο φακελος εξοδου πρεπει να μην υπαρχει ηδη)
         FileInputFormat.addInputPath(job, new Path(args[0]));
         FileOutputFormat.setOutputPath(job, new Path(args[1]));
 
+        //υποβαλει το job στο cluster, περιμενει να ολοκληρωθει και τυπωνει progress logs
+        //επιστρεφει true αν ολοκληρωθηκε επιτυχως, αλλιως false
         boolean success = job.waitForCompletion(true);
 
         if (success) {
-            Counters counters = job.getCounters();
+            Counters counters = job.getCounters(); //ανακτουμε ολους τους counters που συγκεντρωσε το hadoop απο ολα τα map και reduce tasks
+            //εκτυπωση ενσωματωμενων counters
             System.out.println("========== Q1 COUNTERS (" + (useCombiner ? "WITH COMBINER" : "WITHOUT COMBINER") + ") ==========");
             System.out.println("Map output records     : " + counters.findCounter(TaskCounter.MAP_OUTPUT_RECORDS).getValue());
             System.out.println("Combine input records  : " + counters.findCounter(TaskCounter.COMBINE_INPUT_RECORDS).getValue());
