@@ -16,8 +16,12 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -56,9 +60,7 @@ public class Q4 {
         return words;
     }
 
-    // =====================================================================
     // JOB 1: count(x) και N, ανά αρχείο
-    // =====================================================================
 
     // MAP: ανά γραμμή ("*", "pos:1") για το N, και (λέξη, "pos:1") για κάθε λέξη του συνόλου της γραμμής
     public static class CountMapper extends Mapper<LongWritable, Text, Text, Text> {
@@ -133,6 +135,32 @@ public class Q4 {
                 if (isTotal || e.getValue() >= MIN_PAIR_COUNT) {                         // Το N γράφεται πάντα, οι λέξεις μόνο αν count ≥ 10
                     context.write(key, new Text(e.getKey() + "\t" + e.getValue()));     // π.χ. "morning  pos  500" ή "*  pos  32937"
                 }
+            }
+        }
+    }
+
+    // JOB 2: count(x,y) και PMI, ανά αρχείο
+
+    // REDUCE: (θα συμπληρωθεί) υπολογίζει PMI για κάθε ζεύγος με count(x,y) ≥ 10
+    // Τα count(x), count(y) και N τα παίρνει από το output του Job 1 (side data μέσω Distributed Cache)
+    public static class PmiReducer extends Reducer<Text, Text, Text, Text> {
+
+        private final Map<String, Integer> counts = new HashMap<>();                   // Κρατάει το output του Job 1: "pos morning" → 27, "pos *" → N
+
+        @Override
+        protected void setup(Context context) throws IOException {
+            for (URI uri : context.getCacheFiles()) {                                   // Τα αρχεία του Job 1 που δηλώθηκαν με addCacheFile
+                String name = new Path(uri.getPath()).getName();                        // Το Hadoop τα έχει αντιγράψει τοπικά με αυτό το όνομα, π.χ. "part-r-00000"
+                BufferedReader br = new BufferedReader(new FileReader(name));
+                String l;
+                while ((l = br.readLine()) != null) {                                   // Κάθε γραμμή: "morning\tpos\t27" ή "*\tpos\t32937"
+                    String[] parts = l.split("\t");                                     // → ["morning", "pos", "27"]
+                    String word = parts[0];                                             // "morning" (ή "*")
+                    String file = parts[1];                                             // "pos"
+                    int n = Integer.parseInt(parts[2]);                                 // 27
+                    counts.put(file + " " + word, n);                                   // Αποθηκεύει "pos morning" → 27
+                }
+                br.close();
             }
         }
     }
