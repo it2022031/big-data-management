@@ -12,6 +12,9 @@ import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 
 import java.io.IOException;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
@@ -39,11 +42,12 @@ public class Hello {
         }
     }
 
-    // REDUCE: για το "*" κρατάει τα σύνολα ανά αρχείο, για κάθε λέξη γράφει πλήθος / σύνολο αρχείου
+    // REDUCE: για το "*" κρατάει τα σύνολα ανά αρχείο, για κάθε λέξη υπολογίζει το r, και στο cleanup() τα γράφει ταξινομημένα
     // Προϋπόθεση: 1 reducer, ώστε το "*" (που ταξινομείται πρώτο) να φτάνει πριν από τις λέξεις
     public static class HelloReducer extends Reducer<Text, Text, Text, Text> {
 
         private Map<String, Integer> totals = new TreeMap<>();                         // Κρατάει τα σύνολα λέξεων ανά αρχείο (από το "*")
+        private final List<Map.Entry<String, Double>> results = new ArrayList<>();     // Κρατάει (λέξη, r) από όλες τις κλήσεις, για το cleanup()
 
         @Override
         protected void reduce(Text word, Iterable<Text> values, Context context)
@@ -63,15 +67,21 @@ public class Hello {
                 return;                                                                 // Δεν γράφει γραμμή για το "*"
             }
 
-            for (Map.Entry<String, Integer> e : counts.entrySet()) {                    // Γράφει μία γραμμή για κάθε αρχείο
-                double ratio = (double) e.getValue() / totals.get(e.getKey());          // Πλήθος λέξης / σύνολο λέξεων του αρχείου
-                context.write(word, new Text(e.getKey() + "\t" + e.getValue() + "\t" + ratio));
-            }
-
             if (counts.containsKey("farm") && counts.containsKey("zoo")) {              // Μόνο αν η λέξη υπάρχει και στα δύο αρχεία
                 double rFarm = (double) counts.get("farm") / totals.get("farm");        // Συχνότητα στο farm, π.χ. 1 / 4
                 double rZoo  = (double) counts.get("zoo")  / totals.get("zoo");         // Συχνότητα στο zoo, π.χ. 2 / 6
-                context.write(word, new Text("r=" + (rFarm / rZoo)));                   // Λόγος των δύο συχνοτήτων
+                results.add(new AbstractMap.SimpleEntry<>(word.toString(), rFarm / rZoo));  // Κρατάει (λέξη, r) για το τέλος, χωρίς να γράφει
+            }
+        }
+
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            results.sort((a, b) -> {                                                    // Ταξινομεί όλα τα (λέξη, r)
+                int c = Double.compare(b.getValue(), a.getValue());                     // Πρώτα κατά r, από το μεγαλύτερο στο μικρότερο
+                return (c != 0) ? c : a.getKey().compareTo(b.getKey());                 // Σε ισοβαθμία, αλφαβητικά
+            });
+            for (Map.Entry<String, Double> e : results) {                               // Γράφει τις γραμμές με τη σειρά ταξινόμησης
+                context.write(new Text(e.getKey()), new Text(String.format("%.3f", e.getValue())));
             }
         }
     }
