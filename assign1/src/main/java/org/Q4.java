@@ -141,6 +141,37 @@ public class Q4 {
 
     // JOB 2: count(x,y) και PMI, ανά αρχείο
 
+    // MAP: για κάθε ζεύγος λέξεων (x < y) του συνόλου της γραμμής βγάζει ("x y", "pos:1")
+    public static class PairMapper extends Mapper<LongWritable, Text, Text, Text> {
+
+        private String file;                                            // "pos", "neg" ή "sotu"
+        private final Text outValue = new Text();                       // Κρατάει το "pos:1" ή "neg:1"
+
+        @Override
+        protected void setup(Context context) {
+            String name = ((FileSplit) context.getInputSplit()).getPath().getName();   // Παίρνει το όνομα του αρχείου, π.χ. "pos.txt"
+            file = name.replace(".txt", "");                                           // Αφαιρεί την κατάληξη: "pos"
+            outValue.set(file + ":1");                                                 // Ετοιμάζει το value: "pos:1"
+        }
+
+        @Override
+        protected void map(LongWritable key, Text line, Context context)
+                throws IOException, InterruptedException {
+
+            if (!file.equals("pos") && !file.equals("neg")) {          // Το Q4 αφορά μόνο pos και neg: το sotu αγνοείται
+                return;
+            }
+
+            List<String> words = new ArrayList<>(lineWords(line.toString()));   // Το σύνολο της γραμμής ως λίστα, ταξινομημένο (TreeSet)
+
+            for (int i = 0; i < words.size(); i++) {                    // Κάθε λέξη x ...
+                for (int j = i + 1; j < words.size(); j++) {            // ... με κάθε ΕΠΟΜΕΝΗ λέξη y, άρα πάντα x < y
+                    context.write(new Text(words.get(i) + " " + words.get(j)), outValue);   // Γράφει ("x y", "pos:1")
+                }
+            }
+        }
+    }
+
     // REDUCE: (θα συμπληρωθεί) υπολογίζει PMI για κάθε ζεύγος με count(x,y) ≥ 10
     // Τα count(x), count(y) και N τα παίρνει από το output του Job 1 (side data μέσω Distributed Cache)
     public static class PmiReducer extends Reducer<Text, Text, Text, Text> {
