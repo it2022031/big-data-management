@@ -1,5 +1,10 @@
 package org;
 
+/*
+ * Big Data Management 2026-2027 - Εργασία 1 - Ερώτημα 1 (Ανεστραμμένο ευρετήριο με συχνότητες)
+ * Ομάδα 8: Αίας Κωνσταντίνος Καρκάνης (ais26108), Σταυρούλα Πάρσαλη (ais26115)
+ */
+
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;

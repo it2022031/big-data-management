@@ -2,16 +2,7 @@ package org;
 
 /*
  * Big Data Management 2026-2027 - Εργασία 1 - Ερώτημα 2 (Διακριτικές λέξεις)
- * Ομάδα: <Ονοματεπώνυμο 1> (<ΑΜ 1>), <Ονοματεπώνυμο 2> (<ΑΜ 2>)
- *
- * Ένα job:
- *   MAP      : (λέξη, "pos:1") για κάθε λέξη ≥3 χαρακτήρων και ("*", "pos:<λέξεις γραμμής>") για το Npos/Nneg
- *   COMBINE  : αθροίζει ανά αρχείο → (λέξη, "pos:<άθροισμα>")
- *   REDUCE   : 1 reducer. Το "*" ταξινομείται πρώτο, οπότε τα Npos/Nneg είναι γνωστά πριν από τις λέξεις.
- *              Για κάθε λέξη με cpos ≥ 50 και cneg ≥ 50 υπολογίζει το r και το κρατάει σε λίστα.
- *   CLEANUP  : ταξινομεί κατά r (φθίνον, σε ισοβαθμία αλφαβητικά) και γράφει τις 20 πρώτες και τις 20 τελευταίες.
- *
- * Εκτέλεση: hadoop jar <jar> org.Q2 /user/root/input /user/root/q2_out
+ * Ομάδα 8: Αίας Κωνσταντίνος Καρκάνης (ais26108), Σταυρούλα Πάρσαλη (ais26115)
  */
 
 import org.apache.hadoop.conf.Configuration;
@@ -34,15 +25,15 @@ import java.util.TreeMap;
 
 public class Q2 {
 
-    private static final int MIN_LENGTH = 3;     // Ελάχιστο μήκος λέξης για να υπολογιστεί r
-    private static final int MIN_COUNT  = 50;    // Ελάχιστες εμφανίσεις σε pos ΚΑΙ σε neg
-    private static final int TOP        = 20;    // Πόσες λέξεις γράφονται από την κάθε άκρη
+    private static final int MIN_LENGTH = 3;                                            // Ελάχιστο μήκος λέξης για να υπολογιστεί r
+    private static final int MIN_COUNT  = 50;                                           // Ελάχιστες εμφανίσεις σε pos ΚΑΙ σε neg
+    private static final int TOP        = 20;                                           // Πόσες λέξεις γράφονται από την κάθε άκρη
 
     // Σπάει μια γραμμή σε λέξεις: πεζά γράμματα, λέξη = μέγιστη ακολουθία a-z
     private static List<String> tokenize(String line) {
         List<String> words = new ArrayList<>();
-        for (String w : line.toLowerCase().split("[^a-z]+")) {          // Μετατρέπει σε πεζά και κόβει σε κάθε μη-γράμμα
-            if (!w.isEmpty()) {                                         // Παραλείπει τα κενά κομμάτια
+        for (String w : line.toLowerCase().split("[^a-z]+")) {                      // Μετατρέπει σε πεζά και κόβει σε κάθε μη-γράμμα
+            if (!w.isEmpty()) {                                                        // Παραλείπει τα κενά κομμάτια
                 words.add(w);
             }
         }
@@ -52,8 +43,8 @@ public class Q2 {
     // MAP: για κάθε λέξη ≥3 χαρακτήρων βγάζει (λέξη, "pos:1"), και ανά γραμμή ("*", "pos:<πλήθος λέξεων>")
     public static class Q2Mapper extends Mapper<LongWritable, Text, Text, Text> {
 
-        private String file;                                            // "pos", "neg" ή "sotu"
-        private final Text outValue = new Text();                       // Κρατάει το "pos:1" ή "neg:1"
+        private String file;                                                           // "pos", "neg" ή "sotu"
+        private final Text outValue = new Text();                                      // Κρατάει το "pos:1" ή "neg:1"
 
         @Override
         protected void setup(Context context) {
@@ -66,20 +57,20 @@ public class Q2 {
         protected void map(LongWritable key, Text line, Context context)
                 throws IOException, InterruptedException {
 
-            if (!file.equals("pos") && !file.equals("neg")) {          // Το Q2 αφορά μόνο pos και neg: το sotu αγνοείται
+            if (!file.equals("pos") && !file.equals("neg")) {                           // Το Q2 αφορά μόνο pos και neg: το sotu αγνοείται
                 return;
             }
 
             List<String> words = tokenize(line.toString());
 
             for (String w : words) {
-                if (w.length() >= MIN_LENGTH) {                         // Οι μικρές λέξεις δεν παίρνουν ποτέ r, οπότε δεν στέλνονται
-                    context.write(new Text(w), outValue);               // Γράφει (λέξη, "pos:1")
+                if (w.length() >= MIN_LENGTH) {                                         // Οι μικρές λέξεις δεν παίρνουν ποτέ r, οπότε δεν στέλνονται
+                    context.write(new Text(w), outValue);                               // Γράφει (λέξη, "pos:1")
                 }
             }
 
-            if (!words.isEmpty()) {                                     // Το Npos/Nneg μετράει ΟΛΕΣ τις λέξεις, κάθε μήκους
-                context.write(new Text("*"), new Text(file + ":" + words.size()));   // Γράφει ("*", "pos:<λέξεις γραμμής>")
+            if (!words.isEmpty()) {                                                     // Το Npos/Nneg μετράει ΟΛΕΣ τις λέξεις, κάθε μήκους
+                context.write(new Text("*"), new Text(file + ":" + words.size()));  // Γράφει ("*", "pos:<λέξεις γραμμής>")
             }
         }
     }
@@ -94,12 +85,14 @@ public class Q2 {
             Map<String, Integer> counts = new TreeMap<>();                              // Κρατάει άθροισμα ανά αρχείο
 
             for (Text v : values) {
-                String[] parts = v.toString().split(":");                               // "pos:1" → ["pos", "1"]
-                counts.merge(parts[0], Integer.parseInt(parts[1]), Integer::sum);       // Προσθέτει στο άθροισμα του αρχείου
+                String[] parts = v.toString().split(":");                            // "pos:1" → ["pos", "1"]
+                String file = parts[0];                                                 // "pos"
+                int n = Integer.parseInt(parts[1]);                                     // 1
+                counts.merge(file, n, Integer::sum);                                    // Προσθέτει στο άθροισμα του αρχείου
             }
 
             for (Map.Entry<String, Integer> e : counts.entrySet()) {                    // Γράφει ένα ζεύγος ανά αρχείο
-                context.write(word, new Text(e.getKey() + ":" + e.getValue()));         // π.χ. (film, "pos:3")
+                context.write(word, new Text(e.getKey() + ":" + e.getValue()));  // π.χ. (film, "pos:3")
             }
         }
     }
@@ -118,7 +111,7 @@ public class Q2 {
             Map<String, Integer> counts = new TreeMap<>();                              // Κρατάει άθροισμα ανά αρχείο
 
             for (Text v : values) {
-                String[] parts = v.toString().split(":");                               // "pos:3" → ["pos", "3"]
+                String[] parts = v.toString().split(":");                            // "pos:3" → ["pos", "3"]
                 String file = parts[0];                                                 // "pos"
                 int n = Integer.parseInt(parts[1]);                                     // 3
                 counts.merge(file, n, Integer::sum);                                    // Προσθέτει στο άθροισμα του αρχείου
@@ -129,8 +122,8 @@ public class Q2 {
                 return;                                                                 // Δεν γράφει γραμμή για το "*"
             }
 
-            int cpos = counts.getOrDefault("pos", 0);                                   // Εμφανίσεις στο pos (0 αν δεν υπάρχει)
-            int cneg = counts.getOrDefault("neg", 0);                                   // Εμφανίσεις στο neg (0 αν δεν υπάρχει)
+            int cpos = counts.getOrDefault("pos", 0);                             // Εμφανίσεις στο pos (0 αν δεν υπάρχει)
+            int cneg = counts.getOrDefault("neg", 0);                             // Εμφανίσεις στο neg (0 αν δεν υπάρχει)
 
             if (cpos >= MIN_COUNT && cneg >= MIN_COUNT) {                               // Φίλτρο: τουλάχιστον 50 φορές ΚΑΙ στα δύο αρχεία
                 double rPos = (double) cpos / totals.get("pos");                        // Συχνότητα στο pos: cpos / Npos
@@ -141,7 +134,7 @@ public class Q2 {
 
         @Override
         protected void cleanup(Context context) throws IOException, InterruptedException {
-            results.sort((a, b) -> {                                                    // Ταξινομεί όλα τα (λέξη, r)
+            results.sort((a, b) -> {            // Ταξινομεί όλα τα (λέξη, r)
                 int c = Double.compare(b.getValue(), a.getValue());                     // Πρώτα κατά r, από το μεγαλύτερο στο μικρότερο
                 return (c != 0) ? c : a.getKey().compareTo(b.getKey());                 // Σε ισοβαθμία, αλφαβητικά
             });

@@ -1,5 +1,10 @@
 package org;
 
+/*
+ * Big Data Management 2026-2027 - Εργασία 1 - Ερώτημα 3 (Bigrams και side data)
+ * Ομάδα 8: Αίας Κωνσταντίνος Καρκάνης (ais26108), Σταυρούλα Πάρσαλη (ais26115)
+ */
+
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
