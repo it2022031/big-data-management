@@ -6,6 +6,8 @@ package org;
  */
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
@@ -33,6 +35,7 @@ public class Q4 {
     private static final int FIRST_WORDS    = 40;   // Πόσες λέξεις κρατάει από την αρχή κάθε γραμμής
     private static final int MIN_LENGTH     = 4;    // Ελάχιστο μήκος λέξης
     private static final int MIN_PAIR_COUNT = 10;   // Ελάχιστο count(x,y) για να γραφτεί ένα ζεύγος
+    private static final int TOP            = 20;   // Πόσα ζεύγη γράφονται ανά αρχείο
 
     // Σπάει μια γραμμή σε λέξεις: πεζά γράμματα, λέξη = μέγιστη ακολουθία a-z
     private static List<String> tokenize(String line) {
@@ -60,7 +63,9 @@ public class Q4 {
         return words;
     }
 
+    // =====================================================================
     // JOB 1: count(x) και N, ανά αρχείο
+    // =====================================================================
 
     // MAP: ανά γραμμή ("*", "pos:1") για το N, και (λέξη, "pos:1") για κάθε λέξη του συνόλου της γραμμής
     public static class CountMapper extends Mapper<LongWritable, Text, Text, Text> {
@@ -139,7 +144,9 @@ public class Q4 {
         }
     }
 
+    // =====================================================================
     // JOB 2: count(x,y) και PMI, ανά αρχείο
+    // =====================================================================
 
     // MAP: για κάθε ζεύγος λέξεων (x < y) του συνόλου της γραμμής βγάζει ("x y", "pos:1")
     public static class PairMapper extends Mapper<LongWritable, Text, Text, Text> {
@@ -172,11 +179,27 @@ public class Q4 {
         }
     }
 
-    // REDUCE: (θα συμπληρωθεί) υπολογίζει PMI για κάθε ζεύγος με count(x,y) ≥ 10
+    // REDUCE: για κάθε ζεύγος αθροίζει count(x,y) ανά αρχείο, και αν είναι ≥ 10 υπολογίζει το PMI
     // Τα count(x), count(y) και N τα παίρνει από το output του Job 1 (side data μέσω Distributed Cache)
+    // Στο cleanup() γράφει τα 20 ζεύγη με το μεγαλύτερο PMI ανά αρχείο
+    // Προϋπόθεση: 1 reducer, ώστε το top 20 να είναι καθολικό
     public static class PmiReducer extends Reducer<Text, Text, Text, Text> {
 
+        // Ένα αποτέλεσμα: ζεύγος, PMI και count(x,y)
+        private static class Result {
+            final String pair;
+            final double pmi;
+            final int count;
+
+            Result(String pair, double pmi, int count) {
+                this.pair = pair;
+                this.pmi = pmi;
+                this.count = count;
+            }
+        }
+
         private final Map<String, Integer> counts = new HashMap<>();                   // Κρατάει το output του Job 1: "pos morning" → 27, "pos *" → N
+        private final Map<String, List<Result>> results = new HashMap<>();             // Κρατάει τα αποτελέσματα ανά αρχείο: "pos" → [...], "neg" → [...]
 
         @Override
         protected void setup(Context context) throws IOException {
@@ -185,7 +208,7 @@ public class Q4 {
                 BufferedReader br = new BufferedReader(new FileReader(name));
                 String l;
                 while ((l = br.readLine()) != null) {                                   // Κάθε γραμμή: "morning\tpos\t27" ή "*\tpos\t32937"
-                    String[] parts = l.split("\t");                                     // → ["morning", "pos", "27"]
+                    String[] parts = l.split("\t");                                    // → ["morning", "pos", "27"]
                     String word = parts[0];                                             // "morning" (ή "*")
                     String file = parts[1];                                             // "pos"
                     int n = Integer.parseInt(parts[2]);                                 // 27
@@ -194,10 +217,66 @@ public class Q4 {
                 br.close();
             }
         }
+
+        @Override
+        protected void reduce(Text key, Iterable<Text> values, Context context)
+                throws IOException, InterruptedException {
+
+            Map<String, Integer> pairCounts = new TreeMap<>();                          // Κρατάει count(x,y) ανά αρχείο
+
+            for (Text v : values) {
+                String[] parts = v.toString().split(":");                               // "pos:12" → ["pos", "12"]
+                String file = parts[0];                                                 // "pos"
+                int n = Integer.parseInt(parts[1]);                                     // 12
+                pairCounts.merge(file, n, Integer::sum);                                // Προσθέτει στο άθροισμα του αρχείου
+            }
+
+            String pair = key.toString();                                               // "forrest gump"
+            String[] xy = pair.split(" ");
+            String x = xy[0];                                                           // "forrest"
+            String y = xy[1];                                                           // "gump"
+
+            for (Map.Entry<String, Integer> e : pairCounts.entrySet()) {                // Για κάθε αρχείο (pos, neg) χωριστά
+                String file = e.getKey();
+                int cxy = e.getValue();                                                 // count(x,y)
+
+                if (cxy >= MIN_PAIR_COUNT) {                                            // Φίλτρο: count(x,y) ≥ 10
+                    int cx = counts.get(file + " " + x);                                // count(x) από το Job 1
+                    int cy = counts.get(file + " " + y);                                // count(y) από το Job 1
+                    int n  = counts.get(file + " *");                                   // N από το Job 1
+                    double pmi = Math.log10((double) cxy * n / ((double) cx * cy));     // PMI = log10(count(x,y) · N / (count(x) · count(y)))
+                    results.computeIfAbsent(file, f -> new ArrayList<>())
+                            .add(new Result(pair, pmi, cxy));                            // Κρατάει το αποτέλεσμα για το τέλος, χωρίς να γράφει
+                }
+            }
+        }
+
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            for (String file : new String[] {"pos", "neg"}) {                           // Πρώτα τα αποτελέσματα του pos, μετά του neg
+                List<Result> list = results.getOrDefault(file, new ArrayList<>());
+
+                list.sort((a, b) -> {                                                   // Ταξινομεί τα ζεύγη του αρχείου
+                    int c = Double.compare(b.pmi, a.pmi);                               // Πρώτα κατά PMI, από το μεγαλύτερο στο μικρότερο
+                    return (c != 0) ? c : a.pair.compareTo(b.pair);                     // Σε ισοβαθμία, αλφαβητικά
+                });
+
+                for (int i = 0; i < Math.min(TOP, list.size()); i++) {                  // Μόνο τα 20 πρώτα
+                    Result r = list.get(i);
+                    context.write(new Text(file),                                       // Γράφει "pos  forrest gump  3.245  12"
+                            new Text(r.pair + "\t" + String.format("%.3f", r.pmi) + "\t" + r.count));
+                }
+            }
+        }
     }
 
-    // DRIVER (προσωρινά τρέχει μόνο το Job 1)
+    // DRIVER: Job 1 → περιμένει → Job 2
     public static void main(String[] args) throws Exception {
+        Path input  = new Path(args[0]);                                                // π.χ. /user/root/input
+        Path counts = new Path(args[1] + "_counts");                                    // ενδιάμεσο: output του Job 1
+        Path output = new Path(args[1]);                                                // τελικό: output του Job 2
+
+        // ---- Job 1: count(x) και N ----
         Job job1 = Job.getInstance(new Configuration(), "q4-counts");
         job1.setJarByClass(Q4.class);
         job1.setMapperClass(CountMapper.class);
@@ -205,8 +284,29 @@ public class Q4 {
         job1.setReducerClass(CountReducer.class);
         job1.setOutputKeyClass(Text.class);
         job1.setOutputValueClass(Text.class);
-        FileInputFormat.addInputPath(job1, new Path(args[0]));
-        FileOutputFormat.setOutputPath(job1, new Path(args[1]));
-        System.exit(job1.waitForCompletion(true) ? 0 : 1);
+        FileInputFormat.addInputPath(job1, input);
+        FileOutputFormat.setOutputPath(job1, counts);
+        if (!job1.waitForCompletion(true)) {                                            // Περιμένει να τελειώσει το Job 1
+            System.exit(1);                                                             // Αν απέτυχε, δεν ξεκινάει το Job 2
+        }
+
+        // ---- Job 2: count(x,y) και PMI ----
+        Job job2 = Job.getInstance(new Configuration(), "q4-pmi");
+        job2.setJarByClass(Q4.class);
+        job2.setMapperClass(PairMapper.class);
+        job2.setCombinerClass(SumCombiner.class);                                       // Ο ίδιος combiner: αθροίζει ανά αρχείο
+        job2.setReducerClass(PmiReducer.class);
+        job2.setNumReduceTasks(1);                                                      // Ένας reducer: για καθολικό top 20 ανά αρχείο
+        job2.setOutputKeyClass(Text.class);
+        job2.setOutputValueClass(Text.class);
+
+        FileSystem fs = FileSystem.get(job2.getConfiguration());
+        for (FileStatus f : fs.globStatus(new Path(counts, "part-r-*"))) {              // Βρίσκει τα αρχεία που έγραψε το Job 1
+            job2.addCacheFile(f.getPath().toUri());                                     // Τα δηλώνει ως side data (Distributed Cache)
+        }
+
+        FileInputFormat.addInputPath(job2, input);                                      // Input του Job 2: πάλι τα κείμενα
+        FileOutputFormat.setOutputPath(job2, output);
+        System.exit(job2.waitForCompletion(true) ? 0 : 1);
     }
 }
