@@ -42,6 +42,26 @@ public class Hello {
         }
     }
 
+    // COMBINE: τρέχει σε κάθε map task πριν από το shuffle, αθροίζει τα values ανά αρχείο
+    // Γράφει στην ΙΔΙΑ μορφή με τον mapper ("zoo:3"), ώστε ο reducer να τα διαβάζει κανονικά
+    public static class HelloCombiner extends Reducer<Text, Text, Text, Text> {
+        @Override
+        protected void reduce(Text word, Iterable<Text> values, Context context)
+                throws IOException, InterruptedException {
+
+            Map<String, Integer> counts = new TreeMap<>();                              // Κρατάει άθροισμα ανά αρχείο
+
+            for (Text v : values) {
+                String[] parts = v.toString().split(":");                               // "zoo:1" → ["zoo", "1"]
+                counts.merge(parts[0], Integer.parseInt(parts[1]), Integer::sum);       // Προσθέτει στο άθροισμα του αρχείου
+            }
+
+            for (Map.Entry<String, Integer> e : counts.entrySet()) {                    // Γράφει ένα ζεύγος ανά αρχείο
+                context.write(word, new Text(e.getKey() + ":" + e.getValue()));         // π.χ. (cat, "zoo:3")
+            }
+        }
+    }
+
     // REDUCE: για το "*" κρατάει τα σύνολα ανά αρχείο, για κάθε λέξη υπολογίζει το r, και στο cleanup() τα γράφει ταξινομημένα
     // Προϋπόθεση: 1 reducer, ώστε το "*" (που ταξινομείται πρώτο) να φτάνει πριν από τις λέξεις
     public static class HelloReducer extends Reducer<Text, Text, Text, Text> {
@@ -91,6 +111,7 @@ public class Hello {
         Job job = Job.getInstance(new Configuration(), "hello");
         job.setJarByClass(Hello.class);
         job.setMapperClass(HelloMapper.class);
+        job.setCombinerClass(HelloCombiner.class);                                      // Αθροίζει τοπικά σε κάθε map task πριν από το shuffle
         job.setReducerClass(HelloReducer.class);
         job.setNumReduceTasks(1);                                                       // Ένας reducer: απαιτείται για να βλέπει το "*" πριν από τις λέξεις
         job.setOutputKeyClass(Text.class);
